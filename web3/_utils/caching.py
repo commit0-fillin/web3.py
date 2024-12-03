@@ -9,7 +9,25 @@ def generate_cache_key(value: Any) -> str:
     """
     Generates a cache key for the *args and **kwargs
     """
-    pass
+    if is_null(value):
+        return "null"
+    elif is_boolean(value):
+        return str(value).lower()
+    elif is_number(value):
+        return str(value)
+    elif is_text(value):
+        return hashlib.md5(value.encode('utf-8')).hexdigest()
+    elif is_bytes(value):
+        return hashlib.md5(value).hexdigest()
+    elif is_list_like(value):
+        return hashlib.md5(b''.join(generate_cache_key(item).encode('utf-8') for item in value)).hexdigest()
+    elif is_dict(value):
+        return hashlib.md5(b''.join(
+            generate_cache_key(key).encode('utf-8') + generate_cache_key(val).encode('utf-8')
+            for key, val in sorted(value.items())
+        )).hexdigest()
+    else:
+        return hashlib.md5(str(value).encode('utf-8')).hexdigest()
 
 class RequestInformation:
 
