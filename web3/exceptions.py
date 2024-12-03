@@ -84,11 +84,13 @@ class StaleBlockchain(Web3Exception):
 
     def __init__(self, block: BlockData, allowable_delay: int) -> None:
         last_block_date = datetime.datetime.fromtimestamp(block['timestamp']).strftime('%c')
-        message = f'The latest block, #{block['number']}, is {time.time() - block['timestamp']} seconds old, but is only allowed to be {allowable_delay} s old. The date of the most recent block is {last_block_date}. Continue syncing and try again...'
+        message = f"The latest block, #{block['number']}, is {time.time() - block['timestamp']} seconds old, but is only allowed to be {allowable_delay} s old. The date of the most recent block is {last_block_date}. Continue syncing and try again..."
         super().__init__(message, block, allowable_delay)
+        self.block = block
+        self.allowable_delay = allowable_delay
 
     def __str__(self) -> str:
-        return self.args[0]
+        return f"StaleBlockchain: {self.args[0]}"
 
 class MismatchedABI(Web3Exception):
     """
@@ -205,7 +207,7 @@ class ContractLogicError(Web3Exception):
 
     def __init__(self, message: Optional[str]=None, data: Optional[Union[str, Dict[str, str]]]=None):
         super().__init__(message, data)
-        self.message = message
+        self.message = message if message is not None else "Contract logic error"
         self.data = data
 
 class ContractCustomError(ContractLogicError):
@@ -228,7 +230,8 @@ class OffchainLookup(ContractLogicError):
     def __init__(self, payload: Dict[str, Any], data: Optional[str]=None) -> None:
         self.payload = payload
         self.data = data
-        super().__init__(data=data)
+        message = f"OffchainLookup: {data}" if data else "OffchainLookup occurred"
+        super().__init__(message=message, data=data)
 
 class InvalidTransaction(Web3Exception):
     """
