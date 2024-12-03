@@ -27,7 +27,11 @@ def get_event_abi_types_for_decoding(event_inputs: Sequence[ABIEventParams]) -> 
     `string`.  Because of this we need to modify the types so that we can
     decode the log entries using the correct types.
     """
-    pass
+    for input_abi in event_inputs:
+        if input_abi['indexed'] and input_abi['type'] in ('string', 'bytes'):
+            yield 'bytes32'
+        else:
+            yield input_abi['type']
 
 @curry
 def get_event_data(abi_codec: ABICodec, event_abi: ABIEvent, log_entry: LogReceipt) -> EventData:
@@ -35,7 +39,44 @@ def get_event_data(abi_codec: ABICodec, event_abi: ABIEvent, log_entry: LogRecei
     Given an event ABI and a log entry for that event, return the decoded
     event data
     """
-    pass
+    log_topics = log_entry['topics']
+    log_data = log_entry['data']
+    
+    # Validate that the first log topic matches the event signature
+    if event_abi_to_log_topic(event_abi) != log_topics[0]:
+        raise LogTopicError("Event signature mismatch")
+    
+    indexed_inputs = get_indexed_event_inputs(event_abi)
+    non_indexed_inputs = exclude_indexed_event_inputs(event_abi)
+    
+    # Decode indexed inputs
+    decoded_indexed_data = abi_codec.decode_abi(
+        [param['type'] for param in indexed_inputs],
+        b''.join([HexBytes(log_topics[i + 1]) for i in range(len(indexed_inputs))])
+    )
+    
+    # Decode non-indexed inputs
+    decoded_non_indexed_data = abi_codec.decode_abi(
+        [param['type'] for param in non_indexed_inputs],
+        HexBytes(log_data)
+    )
+    
+    # Combine decoded data
+    decoded_data = concat_abi_arrays(decoded_indexed_data, decoded_non_indexed_data)
+    
+    # Create event_data dictionary
+    event_data = {
+        'args': AttributeDict(dict(zip(get_abi_input_names(event_abi), decoded_data))),
+        'event': event_abi['name'],
+        'logIndex': log_entry['logIndex'],
+        'transactionIndex': log_entry['transactionIndex'],
+        'transactionHash': log_entry['transactionHash'],
+        'address': log_entry['address'],
+        'blockHash': log_entry['blockHash'],
+        'blockNumber': log_entry['blockNumber'],
+    }
+    
+    return cast(EventData, AttributeDict(event_data))
 normalize_topic_list = compose(remove_trailing_from_seq(remove_value=None), pop_singlets)
 is_not_indexed = complement(is_indexed)
 
@@ -50,9 +91,9 @@ class BaseEventFilterBuilder:
         self.event_abi = event_abi
         self.abi_codec = abi_codec
         self.formatter = formatter
-        self.event_topic = initialize_event_topics(self.event_abi)
+        self.event_topic = event_abi_to_log_topic(self.event_abi)
         self.args = AttributeDict(_build_argument_filters_from_event_abi(event_abi, abi_codec))
-        self._ordered_arg_names = tuple((arg['name'] for arg in event_abi['inputs']))
+        self._ordered_arg_names = tuple(arg['name'] for arg in event_abi['inputs'])
 
 class EventFilterBuilder(BaseEventFilterBuilder):
     pass
@@ -74,8 +115,8 @@ class DataArgumentFilter(BaseArgumentFilter):
 class TopicArgumentFilter(BaseArgumentFilter):
 
     def __init__(self, arg_type: TypeStr, abi_codec: ABICodec) -> None:
+        super().__init__(arg_type)
         self.abi_codec = abi_codec
-        self.arg_type = arg_type
 
 class EventLogErrorFlags(Enum):
     Discard = 'discard'
