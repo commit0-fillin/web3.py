@@ -36,7 +36,20 @@ class Eth(BaseEth):
         of the spec and is only supported by some clients, fall back to
         an eth_feeHistory calculation with min and max caps.
         """
-        pass
+        try:
+            return self._max_priority_fee()
+        except (ValueError, MethodUnavailable):
+            return self._estimate_max_priority_fee()
+
+    def _estimate_max_priority_fee(self) -> Wei:
+        fee_history = self._fee_history(10, 'latest', [10])
+        reward = fee_history['reward'][-1][0]  # Get the most recent reward
+        
+        # Apply min and max caps
+        min_priority_fee = Wei(1_000_000_000)  # 1 gwei
+        max_priority_fee = Wei(2_500_000_000_000)  # 2500 gwei
+        
+        return Wei(max(min(reward, max_priority_fee), min_priority_fee))
     _mining: Method[Callable[[], bool]] = Method(RPC.eth_mining, is_property=True)
     _syncing: Method[Callable[[], Union[SyncStatus, bool]]] = Method(RPC.eth_syncing, is_property=True)
     _fee_history: Method[Callable[[int, Union[BlockParams, BlockNumber], Optional[List[float]]], FeeHistory]] = Method(RPC.eth_feeHistory, mungers=[default_root_munger])
