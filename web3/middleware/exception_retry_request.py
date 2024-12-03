@@ -13,11 +13,39 @@ def exception_retry_middleware(make_request: Callable[[RPCEndpoint, Any], RPCRes
     Creates middleware that retries failed HTTP requests. Is a default
     middleware for HTTPProvider.
     """
-    pass
+    allow_list = allow_list or DEFAULT_ALLOWLIST
+
+    def middleware(method: RPCEndpoint, params: Any) -> RPCResponse:
+        if method not in allow_list:
+            return make_request(method, params)
+
+        for attempt in range(retries):
+            try:
+                return make_request(method, params)
+            except errors as e:
+                if attempt == retries - 1:
+                    raise
+                time.sleep(backoff_factor * (2 ** attempt))
+
+    return middleware
 
 async def async_exception_retry_middleware(make_request: Callable[[RPCEndpoint, Any], Any], _async_w3: 'AsyncWeb3', errors: Collection[Type[BaseException]], retries: int=5, backoff_factor: float=0.3, allow_list: Optional[List[str]]=None) -> AsyncMiddlewareCoroutine:
     """
     Creates middleware that retries failed HTTP requests.
     Is a default middleware for AsyncHTTPProvider.
     """
-    pass
+    allow_list = allow_list or DEFAULT_ALLOWLIST
+
+    async def middleware(method: RPCEndpoint, params: Any) -> RPCResponse:
+        if method not in allow_list:
+            return await make_request(method, params)
+
+        for attempt in range(retries):
+            try:
+                return await make_request(method, params)
+            except errors as e:
+                if attempt == retries - 1:
+                    raise
+                await asyncio.sleep(backoff_factor * (2 ** attempt))
+
+    return middleware
