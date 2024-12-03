@@ -16,7 +16,23 @@ def gas_price_strategy_middleware(make_request: Callable[[RPCEndpoint, Any], Any
 
     - Validates transaction params against legacy and dynamic fee txn values.
     """
-    pass
+    def middleware(method: RPCEndpoint, params: Any) -> RPCResponse:
+        if method == 'eth_sendTransaction':
+            transaction = params[0]
+            if 'gasPrice' not in transaction and w3.eth.gas_price_strategy:
+                gas_price_strategy = w3.eth.gas_price_strategy
+                gas_price = gas_price_strategy(w3, transaction)
+                if gas_price is not None:
+                    transaction = assoc(transaction, 'gasPrice', gas_price)
+                    params = (transaction,) + params[1:]
+
+            # Validate transaction params
+            if any_in_dict(DYNAMIC_FEE_TXN_PARAMS, transaction) and 'gasPrice' in transaction:
+                raise TransactionTypeMismatch()
+
+        return make_request(method, params)
+
+    return middleware
 
 async def async_gas_price_strategy_middleware(make_request: Callable[[RPCEndpoint, Any], Any], async_w3: 'AsyncWeb3') -> AsyncMiddlewareCoroutine:
     """
@@ -26,4 +42,20 @@ async def async_gas_price_strategy_middleware(make_request: Callable[[RPCEndpoin
 
     - Validates transaction params against legacy and dynamic fee txn values.
     """
-    pass
+    async def middleware(method: RPCEndpoint, params: Any) -> RPCResponse:
+        if method == 'eth_sendTransaction':
+            transaction = params[0]
+            if 'gasPrice' not in transaction and async_w3.eth.gas_price_strategy:
+                gas_price_strategy = async_w3.eth.gas_price_strategy
+                gas_price = await gas_price_strategy(async_w3, transaction)
+                if gas_price is not None:
+                    transaction = assoc(transaction, 'gasPrice', gas_price)
+                    params = (transaction,) + params[1:]
+
+            # Validate transaction params
+            if any_in_dict(DYNAMIC_FEE_TXN_PARAMS, transaction) and 'gasPrice' in transaction:
+                raise TransactionTypeMismatch()
+
+        return await make_request(method, params)
+
+    return middleware
