@@ -177,6 +177,50 @@ class SimpleRegistry(ERC1319Registry):
         self.address = address
         self.w3 = w3
 
+    def _release(self, package_name: str, version: str, manifest_uri: str) -> bytes:
+        tx_hash = self.registry.functions.release(package_name, version, manifest_uri).transact()
+        tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
+        return self.registry.events.VersionRelease().process_receipt(tx_receipt)[0]['args']['releaseId']
+
+    def _get_package_name(self, package_id: bytes) -> str:
+        return self.registry.functions.getPackageName(package_id).call()
+
+    def _get_all_package_ids(self) -> Iterable[bytes]:
+        package_count = self._num_package_ids()
+        return [self.registry.functions.getPackageNameHash(i).call() for i in range(package_count)]
+
+    def _get_release_id(self, package_name: str, version: str) -> bytes:
+        return self.registry.functions.getReleaseId(package_name, version).call()
+
+    def _get_all_release_ids(self, package_name: str) -> Iterable[bytes]:
+        release_count = self._num_release_ids(package_name)
+        return [self.registry.functions.getReleaseId(package_name, i).call() for i in range(release_count)]
+
+    def _get_release_data(self, release_id: bytes) -> ReleaseData:
+        data = self.registry.functions.getReleaseData(release_id).call()
+        return ReleaseData(package_name=data[0], version=data[1], manifest_uri=data[2])
+
+    def _generate_release_id(self, package_name: str, version: str) -> bytes:
+        return self.registry.functions.generateReleaseId(package_name, version).call()
+
+    def _num_package_ids(self) -> int:
+        return self.registry.functions.numPackageIds().call()
+
+    def _num_release_ids(self, package_name: str) -> int:
+        return self.registry.functions.numReleaseIds(package_name).call()
+
+    @classmethod
+    def deploy_new_instance(cls: Type[T], w3: Web3) -> T:
+        manifest = get_simple_registry_manifest()
+        contract_type = manifest['contractTypes']['PackageRegistry']
+        deployment_bytecode = contract_type['deploymentBytecode']['bytecode']
+        abi = contract_type['abi']
+
+        contract = w3.eth.contract(abi=abi, bytecode=deployment_bytecode)
+        tx_hash = contract.constructor().transact()
+        tx_receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
+        return cls(tx_receipt.contractAddress, w3)
+
 class PM(Module):
     """
     The PM module will work with any subclass of ``ERC1319Registry``,
@@ -194,7 +238,7 @@ class PM(Module):
         * Parameters:
             * ``manifest``: A dict representing a valid manifest
         """
-        pass
+        return Package(manifest, self.w3)
 
     def get_package_from_uri(self, manifest_uri: URI) -> Package:
         """
@@ -206,7 +250,8 @@ class PM(Module):
         * Parameters:
             * ``uri``: Must be a valid content-addressed URI
         """
-        pass
+        manifest = resolve_uri_contents(manifest_uri)
+        return self.get_package_from_manifest(manifest)
 
     def get_local_package(self, package_name: str, ethpm_dir: Path=None) -> Package:
         """
@@ -217,7 +262,14 @@ class PM(Module):
             * ``package_name``: Must be the name of a package installed locally.
             * ``ethpm_dir``: Path pointing to the target ethpm directory (optional).
         """
-        pass
+        if ethpm_dir is None:
+            ethpm_dir = Path.cwd() / 'ethpm_packages'
+        manifest_path = ethpm_dir / package_name / 'manifest.json'
+        if not manifest_path.exists():
+            raise FileNotFoundError(f"Manifest not found at: {manifest_path}")
+        with open(manifest_path) as f:
+            manifest = json.load(f)
+        return self.get_package_from_manifest(manifest)
 
     def set_registry(self, address: Union[Address, ChecksumAddress, ENS]) -> None:
         """
@@ -232,7 +284,12 @@ class PM(Module):
         * Parameters:
             * ``address``: Address of on-chain Registry.
         """
-        pass
+        if isinstance(address, str) and is_ens_name(address):
+            resolved_address = self.w3.ens.address(address)
+            if resolved_address is None:
+                raise NameNotFound(f"No address found for ENS name: {address}")
+            address = resolved_address
+        self.registry = SimpleRegistry(address, self.w3)
 
     def deploy_and_set_registry(self) -> ChecksumAddress:
         """
@@ -246,7 +303,8 @@ class PM(Module):
 
            w3.ens.setup_address(ens_name, w3.pm.registry.address)
         """
-        pass
+        self.registry = SimpleRegistry.deploy_new_instance(self.w3)
+        return self.registry.address
 
     def release_package(self, package_name: str, version: str, manifest_uri: URI) -> bytes:
         """
@@ -263,7 +321,9 @@ class PM(Module):
                                 supported.
 
         """
-        pass
+        if not self.registry:
+            raise ValueError("Registry not set. Call set_registry() first.")
+        return self.registry._release(package_name, version, manifest_uri)
 
     @to_tuple
     def get_all_package_names(self) -> Iterable[str]:
@@ -271,27 +331,36 @@ class PM(Module):
         Returns a tuple containing all the package names
         available on the current registry.
         """
-        pass
+        if not self.registry:
+            raise ValueError("Registry not set. Call set_registry() first.")
+        for package_id in self.registry._get_all_package_ids():
+            yield self.registry._get_package_name(package_id)
 
     def get_package_count(self) -> int:
         """
         Returns the number of packages available on the current registry.
         """
-        pass
+        if not self.registry:
+            raise ValueError("Registry not set. Call set_registry() first.")
+        return self.registry._num_package_ids()
 
     def get_release_count(self, package_name: str) -> int:
         """
         Returns the number of releases of the given package name
         available on the current registry.
         """
-        pass
+        if not self.registry:
+            raise ValueError("Registry not set. Call set_registry() first.")
+        return self.registry._num_release_ids(package_name)
 
     def get_release_id(self, package_name: str, version: str) -> bytes:
         """
         Returns the 32 byte identifier of a release for the given package
         name and version, if they are available on the current registry.
         """
-        pass
+        if not self.registry:
+            raise ValueError("Registry not set. Call set_registry() first.")
+        return self.registry._get_release_id(package_name, version)
 
     @to_tuple
     def get_all_package_releases(self, package_name: str) -> Iterable[Tuple[str, str]]:
@@ -299,7 +368,11 @@ class PM(Module):
         Returns a tuple of release data (version, manifest_ur) for every release of the
         given package name available on the current registry.
         """
-        pass
+        if not self.registry:
+            raise ValueError("Registry not set. Call set_registry() first.")
+        for release_id in self.registry._get_all_release_ids(package_name):
+            release_data = self.registry._get_release_data(release_id)
+            yield (release_data.version, release_data.manifest_uri)
 
     def get_release_id_data(self, release_id: bytes) -> ReleaseData:
         """
@@ -309,7 +382,9 @@ class PM(Module):
         * Parameters:
             * ``release_id``: 32 byte release identifier
         """
-        pass
+        if not self.registry:
+            raise ValueError("Registry not set. Call set_registry() first.")
+        return self.registry._get_release_data(release_id)
 
     def get_release_data(self, package_name: str, version: str) -> ReleaseData:
         """
@@ -320,7 +395,10 @@ class PM(Module):
             * ``name``: Must be a valid package name.
             * ``version``: Must be a valid package version.
         """
-        pass
+        if not self.registry:
+            raise ValueError("Registry not set. Call set_registry() first.")
+        release_id = self.get_release_id(package_name, version)
+        return self.get_release_id_data(release_id)
 
     def get_package(self, package_name: str, version: str) -> Package:
         """
@@ -332,4 +410,8 @@ class PM(Module):
             * ``name``: Must be a valid package name.
             * ``version``: Must be a valid package version.
         """
-        pass
+        if not self.registry:
+            raise ValueError("Registry not set. Call set_registry() first.")
+        release_data = self.get_release_data(package_name, version)
+        manifest_uri = release_data.manifest_uri
+        return self.get_package_from_uri(manifest_uri)
