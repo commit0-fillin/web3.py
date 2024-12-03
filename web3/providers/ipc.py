@@ -25,12 +25,13 @@ class PersistantSocket:
         return self.sock
 
     def __exit__(self, exc_type: Type[BaseException], exc_value: BaseException, traceback: TracebackType) -> None:
-        if exc_value is not None:
+        if self.sock:
             try:
                 self.sock.close()
             except Exception:
                 pass
-            self.sock = None
+            finally:
+                self.sock = None
 
 class IPCProvider(JSONBaseProvider):
     logger = logging.getLogger('web3.providers.IPCProvider')
