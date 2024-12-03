@@ -13,7 +13,19 @@ def attrdict_middleware(make_request: Callable[[RPCEndpoint, Any], Any], _w3: 'W
     Note: Accessing `AttributeDict` properties via attribute
         (e.g. my_attribute_dict.property1) will not preserve typing.
     """
-    pass
+    def middleware(method: RPCEndpoint, params: Any) -> RPCResponse:
+        response = make_request(method, params)
+
+        if 'result' in response:
+            result = response['result']
+            if isinstance(result, dict):
+                return assoc(response, 'result', AttributeDict(result))
+            elif isinstance(result, list) and all(isinstance(item, dict) for item in result):
+                return assoc(response, 'result', [AttributeDict(item) for item in result])
+
+        return response
+
+    return middleware
 
 async def async_attrdict_middleware(make_request: Callable[[RPCEndpoint, Any], Any], async_w3: 'AsyncWeb3') -> AsyncMiddlewareCoroutine:
     """
@@ -22,4 +34,16 @@ async def async_attrdict_middleware(make_request: Callable[[RPCEndpoint, Any], A
     Note: Accessing `AttributeDict` properties via attribute
         (e.g. my_attribute_dict.property1) will not preserve typing.
     """
-    pass
+    async def middleware(method: RPCEndpoint, params: Any) -> RPCResponse:
+        response = await make_request(method, params)
+
+        if 'result' in response:
+            result = response['result']
+            if isinstance(result, dict):
+                return assoc(response, 'result', AttributeDict(result))
+            elif isinstance(result, list) and all(isinstance(item, dict) for item in result):
+                return assoc(response, 'result', [AttributeDict(item) for item in result])
+
+        return response
+
+    return middleware
