@@ -192,7 +192,21 @@ class BaseContract:
 
         :param data: defaults to function selector
         """
-        pass
+        if args is None:
+            args = tuple()
+        if kwargs is None:
+            kwargs = {}
+
+        fn_abi = find_matching_fn_abi(cls.abi, fn_name, args, kwargs)
+        
+        if data is None:
+            data = add_0x_prefix(function_abi_to_4byte_selector(fn_abi))
+
+        arguments = merge_args_and_kwargs(fn_abi, args, kwargs)
+
+        encoded_arguments = encode_abi(cls.w3, fn_abi, arguments)
+
+        return add_0x_prefix(HexStr(data + encode_hex(encoded_arguments)[2:]))
     _return_data_normalizers: Tuple[Callable[..., Any], ...] = tuple()
 
 class BaseContractCaller:
