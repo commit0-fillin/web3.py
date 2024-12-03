@@ -27,12 +27,13 @@ class PersistentWebSocket:
         return self.ws
 
     async def __aexit__(self, exc_type: Type[BaseException], exc_val: BaseException, exc_tb: TracebackType) -> None:
-        if exc_val is not None:
+        if self.ws is not None:
             try:
                 await self.ws.close()
             except Exception:
                 pass
-            self.ws = None
+            finally:
+                self.ws = None
 
 class WebsocketProvider(JSONBaseProvider):
     logger = logging.getLogger('web3.providers.WebsocketProvider')
