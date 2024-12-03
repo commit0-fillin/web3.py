@@ -39,7 +39,25 @@ class AsyncEth(BaseEth):
         of the spec and is only supported by some clients, fall back to
         an eth_feeHistory calculation with min and max caps.
         """
-        pass
+        try:
+            return await self._max_priority_fee()
+        except (ValueError, MethodUnavailable):
+            return await self._suggest_max_priority_fee()
+
+    async def _suggest_max_priority_fee(self) -> Wei:
+        fee_history = await self._fee_history(10, 'latest', [10])
+        latest_block = await self.get_block('latest')
+        base_fee = latest_block['baseFeePerGas']
+        
+        max_priority_fees = [
+            sum(reward) // len(reward)
+            for reward in fee_history['reward']
+        ]
+        
+        mean_priority_fee = sum(max_priority_fees) // len(max_priority_fees)
+        suggested_max_priority_fee = Wei(min(mean_priority_fee, Wei(2 * 10**9)))  # Cap at 2 Gwei
+        
+        return Wei(max(suggested_max_priority_fee, Wei(10**9)))  # Ensure at least 1 Gwei
     _mining: Method[Callable[[], Awaitable[bool]]] = Method(RPC.eth_mining, is_property=True)
     _syncing: Method[Callable[[], Awaitable[Union[SyncStatus, bool]]]] = Method(RPC.eth_syncing, is_property=True)
     _fee_history: Method[Callable[[int, Union[BlockParams, BlockNumber], Optional[List[float]]], Awaitable[FeeHistory]]] = Method(RPC.eth_feeHistory, mungers=[default_root_munger])
