@@ -33,7 +33,12 @@ class ReadableAttributeDict(Mapping[TKey, TValue]):
         Custom pretty output for the IPython console
         https://ipython.readthedocs.io/en/stable/api/generated/IPython.lib.pretty.html#extending  # noqa: E501
         """
-        pass
+        builder.text(self.__class__.__name__ + "(")
+        if cycle:
+            builder.text("...")
+        else:
+            builder.pretty(self.__dict__)
+        builder.text(")")
 
 class MutableAttributeDict(MutableMapping[TKey, TValue], ReadableAttributeDict[TKey, TValue]):
 
@@ -74,7 +79,14 @@ def tupleize_lists_nested(d: Mapping[TKey, TValue]) -> AttributeDict[TKey, TValu
     This method converts lists to tuples, rendering them hashable.
     Other unhashable types found will raise a TypeError
     """
-    pass
+    def tupleize(item: Any) -> Any:
+        if isinstance(item, list):
+            return tuple(tupleize(i) for i in item)
+        elif isinstance(item, dict):
+            return AttributeDict({k: tupleize(v) for k, v in item.items()})
+        return item
+
+    return AttributeDict({k: tupleize(v) for k, v in d.items()})
 
 class NamedElementOnion(Mapping[TKey, TValue]):
     """
@@ -99,7 +111,14 @@ class NamedElementOnion(Mapping[TKey, TValue]):
         or at the outermost layer. Note that inserting to the outermost is equivalent
         to calling :meth:`add` .
         """
-        pass
+        if layer is None:
+            # Insert at the outermost layer (equivalent to add)
+            self.add(element, name)
+        elif layer == 0:
+            # Insert at the innermost layer
+            self._queue[name or element] = element
+        else:
+            raise NotImplementedError("Arbitrary layer injection is not supported")
 
     @property
     def middlewares(self) -> Sequence[Any]:
@@ -107,7 +126,7 @@ class NamedElementOnion(Mapping[TKey, TValue]):
         Returns middlewares in the appropriate order to be imported into a new Web3
         instance (reversed _queue order) as a list of (middleware, name) tuples.
         """
-        pass
+        return [(middleware, name) for name, middleware in reversed(self._queue.items())]
 
     def __iter__(self) -> Iterator[TKey]:
         elements = self._queue.values()
