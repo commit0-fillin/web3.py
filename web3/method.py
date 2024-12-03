@@ -76,6 +76,11 @@ class Method(Generic[TFunc]):
             return lambda *_: self.json_rpc_method
         raise ValueError("Invalid json_rpc_method configuration")
 
+    def get_balance_root_munger(self, module, account, block_identifier=None):
+        if block_identifier is None:
+            block_identifier = 'latest'
+        return module, [account, block_identifier]
+
 class DeprecatedMethod:
 
     def __init__(self, method: Method[Callable[..., Any]], old_name: Optional[str]=None, new_name: Optional[str]=None, msg: Optional[str]=None) -> None:
