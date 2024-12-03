@@ -23,7 +23,20 @@ class BaseProvider:
         @returns a function that calls all the middleware and
             eventually self.make_request()
         """
-        pass
+        middlewares = tuple(outer_middlewares) + self._middlewares
+
+        cache_key = middlewares
+        if cache_key != self._request_func_cache[0]:
+            self._request_func_cache = (
+                cache_key,
+                combine_middlewares(
+                    middlewares=middlewares,
+                    w3=w3,
+                    provider_request_fn=self.make_request,
+                )
+            )
+
+        return self._request_func_cache[1]
 
 class JSONBaseProvider(BaseProvider):
 
