@@ -82,14 +82,67 @@ class AsyncContractEvent(BaseContractEvent):
           same time as fromBlock or toBlock
         :yield: Tuple of :class:`AttributeDict` instances
         """
-        pass
+        if fromBlock is None:
+            fromBlock = "latest"
+        if toBlock is None:
+            toBlock = "latest"
+
+        if argument_filters is None:
+            argument_filters = {}
+
+        if block_hash is not None:
+            if fromBlock != "latest" or toBlock != "latest":
+                raise ValueError("Cannot set both block_hash and fromBlock/toBlock")
+            filter_params = {"blockHash": block_hash}
+        else:
+            filter_params = {
+                "fromBlock": fromBlock,
+                "toBlock": toBlock,
+            }
+
+        filter_params["address"] = self.address
+        filter_params["topics"] = self.get_event_topics(argument_filters)
+
+        logs = await self.w3.eth.get_logs(filter_params)
+
+        return [get_event_data(self.w3, self._get_event_abi(), log) for log in logs]
 
     @combomethod
     async def create_filter(self, *, argument_filters: Optional[Dict[str, Any]]=None, fromBlock: Optional[BlockIdentifier]=None, toBlock: BlockIdentifier='latest', address: Optional[ChecksumAddress]=None, topics: Optional[Sequence[Any]]=None) -> AsyncLogFilter:
         """
         Create filter object that tracks logs emitted by this contract event.
         """
-        pass
+        if address is None:
+            address = self.address
+
+        abi = self._get_event_abi()
+
+        if argument_filters is None:
+            argument_filters = {}
+
+        _filters = dict(**argument_filters)
+
+        data_filter_set, event_filter_params = construct_event_filter_params(
+            abi,
+            self.w3.codec,
+            contract_address=address,
+            argument_filters=_filters,
+            fromBlock=fromBlock,
+            toBlock=toBlock,
+            address=address,
+            topics=topics,
+        )
+
+        log_data_extract_fn = functools.partial(get_event_data, abi, self.w3.codec)
+
+        log_filter = AsyncLogFilter(
+            self.w3,
+            event_filter_params,
+            data_filter_set,
+            log_data_extract_fn
+        )
+
+        return log_filter
 
 class AsyncContractEvents(BaseContractEvents):
 
@@ -140,7 +193,23 @@ class AsyncContractFunction(BaseContractFunction):
         :return: ``Caller`` object that has contract public functions
             and variables exposed as Python methods
         """
-        pass
+        call_transaction = self._prepare_transaction(transaction)
+
+        block_id = await async_parse_block_identifier(self.w3, block_identifier)
+
+        return await async_call_contract_function(
+            self.w3,
+            self.address,
+            self._return_data_normalizers,
+            self.abi,
+            self.function_identifier,
+            call_transaction,
+            block_id,
+            self.args,
+            self.kwargs,
+            state_override,
+            ccip_read_enabled,
+        )
 
 class AsyncContractFunctions(BaseContractFunctions):
 
@@ -186,7 +255,13 @@ class AsyncContract(BaseContract):
         :param kwargs: The contract constructor arguments as keyword arguments
         :return: a contract constructor object
         """
-        pass
+        if cls.bytecode is None:
+            raise ValueError("Cannot call constructor on a contract that does not have 'bytecode' associated with it")
+
+        contract_function = cls.functions.constructor()
+        contract_function.args = args
+        contract_function.kwargs = kwargs
+        return contract_function
 
 class AsyncContractCaller(BaseContractCaller):
     w3: 'AsyncWeb3'
@@ -216,4 +291,30 @@ class AsyncContractConstructor(BaseContractConstructor):
         """
         Build the transaction dictionary without sending
         """
-        pass
+        if transaction is None:
+            transaction = {}
+
+        if 'data' in transaction:
+            raise ValueError("Cannot set data in constructor transaction")
+
+        if self.address:
+            raise ValueError("Cannot call constructor on a deployed contract")
+
+        if self.bytecode is None:
+            raise ValueError(
+                "Cannot call constructor on a contract that does not have 'bytecode' associated "
+                "with it"
+            )
+
+        # Merge the transaction parameters with the constructor arguments
+        built_transaction = await async_build_transaction_for_function(
+            self.w3,
+            self.address,
+            self.abi,
+            self.bytecode,
+            self.args,
+            self.kwargs,
+            transaction
+        )
+
+        return await async_fill_transaction_defaults(self.w3, built_transaction)
