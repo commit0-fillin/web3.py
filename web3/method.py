@@ -81,6 +81,39 @@ class Method(Generic[TFunc]):
             block_identifier = 'latest'
         return module, [account, block_identifier]
 
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        if self.is_property:
+            raise TypeError("Properties cannot be called directly")
+        
+        module = args[0] if args else None
+        if module is None:
+            raise TypeError("Method must be called with a module instance as the first argument")
+
+        # Apply mungers
+        munged_args = args
+        for munger in self.mungers:
+            munged_args = munger(*munged_args, **kwargs)
+
+        # Select method
+        method = self.method_selector_fn(*munged_args, **kwargs)
+
+        # Get formatters
+        request_formatter = self.request_formatters(method)
+        result_formatter = self.result_formatters(method)
+        error_formatter = get_error_formatters(method)
+
+        # Format request
+        formatted_args = request_formatter(munged_args)
+
+        # Make request
+        result = module.web3.manager.request_blocking(method, formatted_args)
+
+        # Format result
+        if result is None:
+            return self.null_result_formatters(result)
+        else:
+            return result_formatter(result)
+
 class DeprecatedMethod:
 
     def __init__(self, method: Method[Callable[..., Any]], old_name: Optional[str]=None, new_name: Optional[str]=None, msg: Optional[str]=None) -> None:
@@ -100,3 +133,6 @@ class DeprecatedMethod:
             raise ValueError('Must provide either `old_name` and `new_name` or `msg`')
         warnings.warn(message, category=DeprecationWarning)
         return self.method.__get__(obj, obj_type)
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        return self.method(*args, **kwargs)
