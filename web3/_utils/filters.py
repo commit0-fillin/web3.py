@@ -33,13 +33,17 @@ class BaseFilter:
         Hook for subclasses to change the format of the value that is passed
         into the callback functions.
         """
-        pass
+        if self.log_entry_formatter:
+            return self.log_entry_formatter(entry)
+        return entry
 
     def is_valid_entry(self, entry: LogReceipt) -> bool:
         """
         Hook for subclasses to implement additional filtering layers.
         """
-        pass
+        if self.data_filter_set:
+            return self._check_data_filter(entry)
+        return True
 
 class Filter(BaseFilter):
 
@@ -75,6 +79,9 @@ class LogFilter(Filter):
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         self.log_entry_formatter = kwargs.pop('log_entry_formatter', self.log_entry_formatter)
+        self.data_filter_set = None
+        self.data_filter_set_regex = None
+        self.data_filter_set_function = None
         if 'data_filter_set' in kwargs:
             self.set_data_filters(kwargs.pop('data_filter_set'))
         super().__init__(*args, **kwargs)
@@ -85,7 +92,18 @@ class LogFilter(Filter):
         Expects a set of tuples with the type and value, e.g.:
         (('uint256', [12345, 54321]), ('string', ('a-single-string',)))
         """
-        pass
+        self.data_filter_set = []
+        for data_type, data_value in data_filter_set:
+            if is_array_type(data_type):
+                self.data_filter_set.append((
+                    data_type,
+                    [self.abi_codec.encode_single(data_type, value) for value in data_value]
+                ))
+            else:
+                self.data_filter_set.append((
+                    data_type,
+                    self.abi_codec.encode_single(data_type, data_value)
+                ))
 
 class AsyncLogFilter(AsyncFilter):
     data_filter_set = None
@@ -107,7 +125,18 @@ class AsyncLogFilter(AsyncFilter):
         Expects a set of tuples with the type and value, e.g.:
         (('uint256', [12345, 54321]), ('string', ('a-single-string',)))
         """
-        pass
+        self.data_filter_set = []
+        for data_type, data_value in data_filter_set:
+            if is_array_type(data_type):
+                self.data_filter_set.append((
+                    data_type,
+                    [self.abi_codec.encode_single(data_type, value) for value in data_value]
+                ))
+            else:
+                self.data_filter_set.append((
+                    data_type,
+                    self.abi_codec.encode_single(data_type, data_value)
+                ))
 not_text = complement(is_text)
 normalize_to_text = apply_formatter_if(not_text, decode_utf8_bytes)
 
@@ -117,7 +146,12 @@ def normalize_data_values(type_string: TypeStr, data_value: Any) -> Any:
     eth-abi v1 returns utf-8 bytes for string values.
     This can be removed once eth-abi v2 is required.
     """
-    pass
+    if is_string_type(type_string) and isinstance(data_value, bytes):
+        return data_value.decode('utf-8')
+    elif is_array_type(type_string):
+        base_type = sub_type_of_array_type(type_string)
+        return [normalize_data_values(base_type, value) for value in data_value]
+    return data_value
 
 @curry
 def match_fn(codec: ABICodec, match_values_and_abi: Collection[Tuple[str, Any]], data: Any) -> bool:
@@ -126,7 +160,17 @@ def match_fn(codec: ABICodec, match_values_and_abi: Collection[Tuple[str, Any]],
     Values provided through the match_values_and_abi parameter are
     compared to the abi decoded log data.
     """
-    pass
+    for type_string, match_values in match_values_and_abi:
+        if is_array_type(type_string):
+            data_value = normalize_data_values(type_string, codec.decode_single(type_string, data))
+            for sub_type, sub_match_value in match_values:
+                if not any(sub_match_value == sub_value for sub_value in data_value):
+                    return False
+        else:
+            data_value = normalize_data_values(type_string, codec.decode_single(type_string, data))
+            if not any(match_value == data_value for match_value in match_values):
+                return False
+    return True
 
 class _UseExistingFilter(Exception):
     """
