@@ -44,7 +44,14 @@ class RequestManager:
         Leaving w3 unspecified will prevent the middleware from resolving names.
         Documentation should remain in sync with these defaults.
         """
-        pass
+        return [
+            (gas_price_strategy_middleware, 'gas_price_strategy'),
+            (name_to_address_middleware(w3), 'name_to_address'),
+            (attrdict_middleware, 'attrdict'),
+            (validation_middleware, 'validation'),
+            (abi_middleware, 'abi'),
+            (buffered_gas_estimate_middleware, 'gas_estimate'),
+        ]
 
     @staticmethod
     def async_default_middlewares() -> List[Tuple[AsyncMiddleware, str]]:
@@ -52,19 +59,53 @@ class RequestManager:
         List the default async middlewares for the request manager.
         Documentation should remain in sync with these defaults.
         """
-        pass
+        return [
+            (async_gas_price_strategy_middleware, 'gas_price_strategy'),
+            (async_name_to_address_middleware, 'name_to_address'),
+            (async_attrdict_middleware, 'attrdict'),
+            (async_validation_middleware, 'validation'),
+            (async_buffered_gas_estimate_middleware, 'gas_estimate'),
+        ]
 
     def request_blocking(self, method: Union[RPCEndpoint, Callable[..., RPCEndpoint]], params: Any, error_formatters: Optional[Callable[..., Any]]=None, null_result_formatters: Optional[Callable[..., Any]]=None) -> Any:
         """
         Make a synchronous request using the provider
         """
-        pass
+        response = self._make_request(method, params)
+        
+        if "error" in response:
+            if error_formatters:
+                formatted_error = error_formatters(response["error"])
+                raise BadResponseFormat(formatted_error)
+            else:
+                raise BadResponseFormat(response["error"])
+        
+        result = response.get("result")
+        
+        if result is None and null_result_formatters:
+            result = null_result_formatters(result)
+        
+        return result
 
     async def coro_request(self, method: Union[RPCEndpoint, Callable[..., RPCEndpoint]], params: Any, error_formatters: Optional[Callable[..., Any]]=None, null_result_formatters: Optional[Callable[..., Any]]=None) -> Any:
         """
         Coroutine for making a request using the provider
         """
-        pass
+        response = await self._make_async_request(method, params)
+        
+        if "error" in response:
+            if error_formatters:
+                formatted_error = error_formatters(response["error"])
+                raise BadResponseFormat(formatted_error)
+            else:
+                raise BadResponseFormat(response["error"])
+        
+        result = response.get("result")
+        
+        if result is None and null_result_formatters:
+            result = null_result_formatters(result)
+        
+        return result
 
 class _AsyncPersistentMessageStream:
     """
