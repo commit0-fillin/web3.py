@@ -18,7 +18,15 @@ def make_stalecheck_middleware(allowable_delay: int, skip_stalecheck_for_methods
     If the latest block in the chain is older than 5 minutes in this example, then the
     middleware will raise a StaleBlockchain exception.
     """
-    pass
+    def stalecheck_middleware(make_request: Callable[[RPCEndpoint, Any], Any], w3: "Web3") -> Callable[[RPCEndpoint, Any], RPCResponse]:
+        def middleware(method: RPCEndpoint, params: Any) -> RPCResponse:
+            if method not in skip_stalecheck_for_methods:
+                latest_block = w3.eth.get_block('latest')
+                if time.time() - latest_block['timestamp'] > allowable_delay:
+                    raise StaleBlockchain(latest_block, allowable_delay)
+            return make_request(method, params)
+        return middleware
+    return stalecheck_middleware
 
 async def async_make_stalecheck_middleware(allowable_delay: int, skip_stalecheck_for_methods: Collection[str]=SKIP_STALECHECK_FOR_METHODS) -> AsyncMiddleware:
     """
@@ -32,4 +40,12 @@ async def async_make_stalecheck_middleware(allowable_delay: int, skip_stalecheck
     If the latest block in the chain is older than 5 minutes in this example, then the
     middleware will raise a StaleBlockchain exception.
     """
-    pass
+    async def stalecheck_middleware(make_request: Callable[[RPCEndpoint, Any], Any], w3: "AsyncWeb3") -> AsyncMiddlewareCoroutine:
+        async def middleware(method: RPCEndpoint, params: Any) -> RPCResponse:
+            if method not in skip_stalecheck_for_methods:
+                latest_block = await w3.eth.get_block('latest')
+                if time.time() - latest_block['timestamp'] > allowable_delay:
+                    raise StaleBlockchain(latest_block, allowable_delay)
+            return await make_request(method, params)
+        return middleware
+    return stalecheck_middleware
