@@ -39,7 +39,11 @@ def segment_count(start: int, stop: int, step: int=5) -> Iterable[Tuple[int, int
     >>> next(segment_counter) #  Remainder is also returned
     (9, 10)
     """
-    pass
+    current = start
+    while current < stop:
+        next_segment = min(current + step, stop)
+        yield (current, next_segment)
+        current = next_segment
 
 def block_ranges(start_block: BlockNumber, last_block: Optional[BlockNumber], step: int=5) -> Iterable[Tuple[BlockNumber, BlockNumber]]:
     """Returns 2-tuple ranges describing ranges of block from start_block to last_block
@@ -47,7 +51,12 @@ def block_ranges(start_block: BlockNumber, last_block: Optional[BlockNumber], st
     Ranges do not overlap to facilitate use as ``toBlock``, ``fromBlock``
     json-rpc arguments, which are both inclusive.
     """
-    pass
+    if last_block is None:
+        yield (BlockNumber(start_block), None)
+        return
+
+    for from_block, to_block in segment_count(start_block, last_block + 1, step):
+        yield (BlockNumber(from_block), BlockNumber(to_block - 1))
 
 def iter_latest_block(w3: 'Web3', to_block: Optional[Union[BlockNumber, LatestBlockParam]]=None) -> Iterable[BlockNumber]:
     """Returns a generator that dispenses the latest block, if
@@ -66,7 +75,14 @@ def iter_latest_block(w3: 'Web3', to_block: Optional[Union[BlockNumber, LatestBl
     10
     >>> next(new_blocks)  # latest block > to block
     """
-    pass
+    last_block = None
+    while True:
+        latest_block = w3.eth.block_number
+        if latest_block != last_block:
+            if to_block is not None and latest_block > to_block:
+                return
+            yield latest_block
+            last_block = latest_block
 
 def iter_latest_block_ranges(w3: 'Web3', from_block: BlockNumber, to_block: Optional[Union[BlockNumber, LatestBlockParam]]=None) -> Iterable[Tuple[Optional[BlockNumber], Optional[BlockNumber]]]:
     """Returns an iterator unloading ranges of available blocks
@@ -83,7 +99,9 @@ def iter_latest_block_ranges(w3: 'Web3', from_block: BlockNumber, to_block: Opti
     >>> next(blocks_to_filter)  # latest block number = 50
     (46, 50)
     """
-    pass
+    for latest_block in iter_latest_block(w3, to_block):
+        yield (from_block, latest_block)
+        from_block = latest_block + 1
 
 def get_logs_multipart(w3: 'Web3', start_block: BlockNumber, stop_block: BlockNumber, address: Union[Address, ChecksumAddress, List[Union[Address, ChecksumAddress]]], topics: List[Optional[Union[_Hash32, List[_Hash32]]]], max_blocks: int) -> Iterable[List[LogReceipt]]:
     """Used to break up requests to ``eth_getLogs``
@@ -91,7 +109,14 @@ def get_logs_multipart(w3: 'Web3', start_block: BlockNumber, stop_block: BlockNu
     The getLog request is partitioned into multiple calls of the max number of blocks
     ``max_blocks``.
     """
-    pass
+    for from_block, to_block in block_ranges(start_block, stop_block, max_blocks):
+        params = {
+            'fromBlock': from_block,
+            'toBlock': to_block,
+            'address': address,
+            'topics': topics,
+        }
+        yield w3.eth.get_logs(params)
 
 class RequestLogs:
     _from_block: BlockNumber
@@ -135,7 +160,14 @@ async def async_iter_latest_block(w3: 'Web3', to_block: Optional[Union[BlockNumb
     10
     >>> next(new_blocks)  # latest block > to block
     """
-    pass
+    last_block = None
+    while True:
+        latest_block = await w3.eth.block_number
+        if latest_block != last_block:
+            if to_block is not None and latest_block > to_block:
+                return
+            yield latest_block
+            last_block = latest_block
 
 async def async_iter_latest_block_ranges(w3: 'Web3', from_block: BlockNumber, to_block: Optional[Union[BlockNumber, LatestBlockParam]]=None) -> AsyncIterable[Tuple[Optional[BlockNumber], Optional[BlockNumber]]]:
     """Returns an iterator unloading ranges of available blocks
@@ -152,7 +184,9 @@ async def async_iter_latest_block_ranges(w3: 'Web3', from_block: BlockNumber, to
     >>> next(blocks_to_filter)  # latest block number = 50
     (46, 50)
     """
-    pass
+    async for latest_block in async_iter_latest_block(w3, to_block):
+        yield (from_block, latest_block)
+        from_block = latest_block + 1
 
 async def async_get_logs_multipart(w3: 'Web3', start_block: BlockNumber, stop_block: BlockNumber, address: Union[Address, ChecksumAddress, List[Union[Address, ChecksumAddress]]], topics: List[Optional[Union[_Hash32, List[_Hash32]]]], max_blocks: int) -> AsyncIterable[List[LogReceipt]]:
     """Used to break up requests to ``eth_getLogs``
@@ -160,7 +194,14 @@ async def async_get_logs_multipart(w3: 'Web3', start_block: BlockNumber, stop_bl
     The getLog request is partitioned into multiple calls of the max number of blocks
     ``max_blocks``.
     """
-    pass
+    for from_block, to_block in block_ranges(start_block, stop_block, max_blocks):
+        params = {
+            'fromBlock': from_block,
+            'toBlock': to_block,
+            'address': address,
+            'topics': topics,
+        }
+        yield await w3.eth.get_logs(params)
 
 class AsyncRequestLogs:
     _from_block: BlockNumber
