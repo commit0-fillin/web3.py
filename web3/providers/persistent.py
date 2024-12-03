@@ -32,7 +32,7 @@ class PersistentConnectionProvider(AsyncJSONBaseProvider, ABC):
         exception and keep the listener task alive. Override this method to fine-tune
         error logging behavior for the implementation class.
         """
-        pass
+        self.logger.error(f"Listener task exception: {e}", exc_info=True)
 
     def _handle_listener_task_exceptions(self) -> None:
         """
@@ -40,4 +40,11 @@ class PersistentConnectionProvider(AsyncJSONBaseProvider, ABC):
         messages in the main loop. If the message listener task has completed and an
         exception was recorded, raise the exception in the main loop.
         """
-        pass
+        if self._message_listener_task and self._message_listener_task.done():
+            try:
+                self._message_listener_task.result()
+            except Exception as e:
+                if self.silence_listener_task_exceptions:
+                    self._error_log_listener_task_exception(e)
+                else:
+                    raise ProviderConnectionError("Message listener task failed") from e
