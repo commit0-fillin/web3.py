@@ -15,7 +15,21 @@ def _parse_error_with_reverted_prefix(data: str) -> str:
     Parse errors from the data string which begin with the "Reverted" prefix.
     "Reverted", function selector and offset are always the same for revert errors
     """
-    pass
+    if data.startswith('Reverted '):
+        # Remove "Reverted " prefix (9 characters)
+        data = data[9:]
+    
+    # Function selector (4 bytes) and offset (32 bytes) are always the same
+    # So we can skip the first 36 bytes (72 characters in hex)
+    data = data[72:]
+    
+    # The next 32 bytes (64 characters) represent the string length
+    str_length = int(data[:64], 16)
+    
+    # The remaining data is the actual error message
+    error_message = to_bytes(hexstr=data[64:64 + str_length * 2]).decode('utf-8')
+    
+    return error_message
 
 def _raise_contract_error(response_error_data: str) -> None:
     """
@@ -27,7 +41,21 @@ def _raise_contract_error(response_error_data: str) -> None:
         String length (32 bytes)
         Reason string (padded, use string length from above to get meaningful part)
     """
-    pass
+    if response_error_data.startswith(SOLIDITY_ERROR_FUNC_SELECTOR):
+        # Remove function selector
+        data = response_error_data[10:]
+    elif response_error_data.startswith('Reverted '):
+        data = response_error_data[9:]
+    else:
+        data = response_error_data
+
+    # Parse the error message
+    error_msg = _parse_error_with_reverted_prefix(data)
+
+    if error_msg.startswith('execution reverted:'):
+        error_msg = error_msg[20:].strip()
+
+    raise ContractLogicError(error_msg, data)
 
 def raise_contract_logic_error_on_revert(response: RPCResponse) -> RPCResponse:
     """
@@ -38,11 +66,43 @@ def raise_contract_logic_error_on_revert(response: RPCResponse) -> RPCResponse:
 
     See also https://solidity.readthedocs.io/en/v0.6.3/control-structures.html#revert
     """
-    pass
+    if 'error' not in response:
+        return response
+
+    error = response['error']
+    message = error.get('message', MISSING_DATA)
+    data = error.get('data', MISSING_DATA)
+
+    if error.get('code') == '3':
+        raise ContractLogicError(message, data)
+
+    if isinstance(data, str):
+        if data.startswith(SOLIDITY_ERROR_FUNC_SELECTOR):
+            _raise_contract_error(data)
+        elif data.startswith(PANIC_ERROR_FUNC_SELECTOR):
+            panic_code = data[10:12]
+            panic_message = PANIC_ERROR_CODES.get(panic_code, f'Unknown panic code {panic_code}')
+            raise ContractPanicError(panic_message, data)
+        elif data.startswith(OFFCHAIN_LOOKUP_FUNC_SELECTOR):
+            decoded_data = abi.decode(list(OFFCHAIN_LOOKUP_FIELDS.values()), to_bytes(hexstr=data[10:]))
+            raise OffchainLookup(dict(zip(OFFCHAIN_LOOKUP_FIELDS.keys(), decoded_data)), data)
+
+    if message.startswith('execution reverted:'):
+        raise ContractLogicError(message[20:].strip(), data)
+    elif message.startswith('revert'):
+        raise ContractLogicError(message, data)
+    elif data is MISSING_DATA:
+        raise ContractLogicError(message, data)
+    else:
+        raise ContractLogicError(message, data)
+
+    return response
 
 def raise_transaction_indexing_error_if_indexing(response: RPCResponse) -> RPCResponse:
     """
     Raise an error if ``eth_getTransactionReceipt`` returns an error indicating that
     transactions are still being indexed.
     """
-    pass
+    if 'error' in response and response['error'].get('code') == -32001:
+        raise TransactionIndexingInProgress(response['error'].get('message'))
+    return response
