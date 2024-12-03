@@ -70,7 +70,11 @@ class Method(Generic[TFunc]):
     @property
     def method_selector_fn(self) -> Callable[..., Union[RPCEndpoint, Callable[..., RPCEndpoint]]]:
         """Gets the method selector from the config."""
-        pass
+        if callable(self.json_rpc_method):
+            return self.json_rpc_method
+        elif isinstance(self.json_rpc_method, (str, RPCEndpoint)):
+            return lambda *_: self.json_rpc_method
+        raise ValueError("Invalid json_rpc_method configuration")
 
 class DeprecatedMethod:
 
