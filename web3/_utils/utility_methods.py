@@ -11,7 +11,7 @@ def all_in_dict(values: Iterable[Any], d: Union[Dict[Any, Any], TxData, TxParams
     :return:       True if ALL values exist in keys;
                    False if NOT ALL values exist in keys
     """
-    pass
+    return all(value in d for value in values)
 
 def any_in_dict(values: Iterable[Any], d: Union[Dict[Any, Any], TxData, TxParams]) -> bool:
     """
@@ -23,7 +23,7 @@ def any_in_dict(values: Iterable[Any], d: Union[Dict[Any, Any], TxData, TxParams
     :return:       True if ANY value exists in keys;
                    False if NONE of the values exist in keys
     """
-    pass
+    return any(value in d for value in values)
 
 def none_in_dict(values: Iterable[Any], d: Union[Dict[Any, Any], TxData, TxParams]) -> bool:
     """
@@ -35,7 +35,7 @@ def none_in_dict(values: Iterable[Any], d: Union[Dict[Any, Any], TxData, TxParam
     :return:       True if NONE of the values exist in keys;
                    False if ANY value exists in keys
     """
-    pass
+    return not any(value in d for value in values)
 
 def either_set_is_a_subset(set1: Set[Any], set2: Set[Any], percentage: int=100) -> bool:
     """
@@ -50,4 +50,11 @@ def either_set_is_a_subset(set1: Set[Any], set2: Set[Any], percentage: int=100) 
     :return:            True if one set's intersection with the other set is greater
                         than or equal to the given percentage of the other set.
     """
-    pass
+    if not set1 or not set2:
+        return False
+    
+    intersection = set1.intersection(set2)
+    threshold = percentage / 100
+    
+    return (len(intersection) / len(set1) >= threshold or
+            len(intersection) / len(set2) >= threshold)
