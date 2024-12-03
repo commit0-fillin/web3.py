@@ -14,25 +14,55 @@ def hex_encode_abi_type(abi_type: TypeStr, value: Any, force_size: Optional[int]
     """
     Encodes value into a hex string in format of abi_type
     """
-    pass
+    validate_abi_type(abi_type)
+    validate_abi_value(abi_type, value)
+
+    if abi_type.startswith("uint"):
+        return to_hex_with_size(value, force_size or int(abi_type[4:]))
+    elif abi_type.startswith("int"):
+        return to_hex_twos_compliment(value, force_size or int(abi_type[3:]))
+    elif abi_type == "address":
+        return add_0x_prefix(pad_hex(remove_0x_prefix(value), 40))
+    elif abi_type == "bool":
+        return "0x01" if value else "0x00"
+    elif abi_type.startswith("bytes"):
+        if abi_type == "bytes":
+            return add_0x_prefix(encode_hex(value))
+        else:
+            size = int(abi_type[5:])
+            return add_0x_prefix(encode_hex(value).rjust(size * 2, '0'))
+    elif abi_type == "string":
+        return add_0x_prefix(encode_hex(value.encode('utf-8')))
+    else:
+        raise ValueError(f"Unsupported ABI type: {abi_type}")
 
 def to_hex_twos_compliment(value: Any, bit_size: int) -> HexStr:
     """
     Converts integer value to twos compliment hex representation with given bit_size
     """
-    pass
+    if value >= 0:
+        return to_hex_with_size(value, bit_size)
+    else:
+        return to_hex_with_size((1 << bit_size) + value, bit_size)
 
 def to_hex_with_size(value: Any, bit_size: int) -> HexStr:
     """
     Converts a value to hex with given bit_size:
     """
-    pass
+    if isinstance(value, str):
+        value = int(value, 16)
+    if isinstance(value, int):
+        hex_value = hex(value)[2:]
+        return add_0x_prefix(pad_hex(hex_value, bit_size // 4))
+    else:
+        raise TypeError(f"Cannot convert {type(value)} to hex")
 
 def pad_hex(value: Any, bit_size: int) -> HexStr:
     """
     Pads a hex string up to the given bit_size
     """
-    pass
+    value = remove_0x_prefix(value)
+    return value.zfill(bit_size // 4)
 zpad_bytes = pad_bytes(b'\x00')
 
 @curry
@@ -44,7 +74,10 @@ def text_if_str(to_type: Callable[..., str], text_or_primitive: Union[Primitives
         text=text), eg~ to_bytes, to_text, to_hex, to_int, etc
     @param text_or_primitive in bytes, str, or int.
     """
-    pass
+    if isinstance(text_or_primitive, str):
+        return to_type(text=text_or_primitive)
+    else:
+        return to_type(text_or_primitive)
 
 @curry
 def hexstr_if_str(to_type: Callable[..., HexStr], hexstr_or_primitive: Union[Primitives, HexStr, str]) -> HexStr:
@@ -55,7 +88,10 @@ def hexstr_if_str(to_type: Callable[..., HexStr], hexstr_or_primitive: Union[Pri
         text=text), eg~ to_bytes, to_text, to_hex, to_int, etc
     @param hexstr_or_primitive in bytes, str, or int.
     """
-    pass
+    if isinstance(hexstr_or_primitive, str):
+        return to_type(hexstr=hexstr_or_primitive)
+    else:
+        return to_type(hexstr_or_primitive)
 
 class FriendlyJsonSerde:
     """
@@ -76,4 +112,4 @@ def to_json(obj: Dict[Any, Any]) -> str:
     """
     Convert a complex object (like a transaction object) to a JSON string
     """
-    pass
+    return json.dumps(obj, cls=Web3JsonEncoder)
