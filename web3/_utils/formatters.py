@@ -14,7 +14,11 @@ def map_collection(func: Callable[..., TReturn], collection: Any) -> Any:
     Apply func to each element of a collection, or value of a dictionary.
     If the value is not a collection, return it unmodified
     """
-    pass
+    if isinstance(collection, Mapping):
+        return {key: func(value) for key, value in collection.items()}
+    elif is_list_like(collection):
+        return [func(item) for item in collection]
+    return collection
 
 @reject_recursive_repeats
 def recursive_map(func: Callable[..., TReturn], data: Any) -> TReturn:
@@ -23,4 +27,4 @@ def recursive_map(func: Callable[..., TReturn], data: Any) -> TReturn:
     Define func so that it only applies to the type of value that you
     want it to apply to.
     """
-    pass
+    return map_collection(lambda item: recursive_map(func, item), func(data))
