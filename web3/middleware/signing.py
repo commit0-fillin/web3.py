@@ -30,7 +30,18 @@ def format_transaction(transaction: TxParams) -> TxParams:
     the underlying layers. Also has the effect of normalizing 'from' for
     easier comparisons.
     """
-    pass
+    formatted_transaction = {}
+    for key, value in transaction.items():
+        if isinstance(value, bytes):
+            formatted_value = HexBytes(value).hex()
+        elif isinstance(value, int):
+            formatted_value = hex(value)
+        elif isinstance(value, str) and key == 'from':
+            formatted_value = to_checksum_address(value)
+        else:
+            formatted_value = value
+        formatted_transaction[key] = formatted_value
+    return formatted_transaction
 
 def construct_sign_and_send_raw_middleware(private_key_or_account: Union[_PrivateKey, Collection[_PrivateKey]]) -> Middleware:
     """Capture transactions sign and send as raw transactions
@@ -43,7 +54,30 @@ def construct_sign_and_send_raw_middleware(private_key_or_account: Union[_Privat
       - An eth_keys.PrivateKey object
       - A raw private key as a hex string or byte string
     """
-    pass
+    if isinstance(private_key_or_account, (tuple, list, set)):
+        accounts = [to_account(val) for val in private_key_or_account]
+    else:
+        accounts = [to_account(private_key_or_account)]
+
+    def middleware(make_request: Callable[[RPCEndpoint, Any], Any], w3: "Web3") -> Callable[[RPCEndpoint, Any], RPCResponse]:
+        def middleware_fn(method: RPCEndpoint, params: Any) -> RPCResponse:
+            if method != 'eth_sendTransaction':
+                return make_request(method, params)
+
+            transaction = format_transaction(params[0])
+            if 'from' not in transaction:
+                return make_request(method, params)
+
+            elif transaction.get('from') not in {account.address for account in accounts}:
+                return make_request(method, params)
+
+            account = next(account for account in accounts if account.address == transaction['from'])
+            signed = account.sign_transaction(transaction)
+            return make_request(RPC.eth_sendRawTransaction, [signed.rawTransaction])
+
+        return middleware_fn
+
+    return middleware
 
 async def async_construct_sign_and_send_raw_middleware(private_key_or_account: Union[_PrivateKey, Collection[_PrivateKey]]) -> AsyncMiddleware:
     """
@@ -56,4 +90,27 @@ async def async_construct_sign_and_send_raw_middleware(private_key_or_account: U
       - An eth_keys.PrivateKey object
       - A raw private key as a hex string or byte string
     """
-    pass
+    if isinstance(private_key_or_account, (tuple, list, set)):
+        accounts = [to_account(val) for val in private_key_or_account]
+    else:
+        accounts = [to_account(private_key_or_account)]
+
+    async def middleware(make_request: Callable[[RPCEndpoint, Any], Awaitable[Any]], async_w3: "AsyncWeb3") -> AsyncMiddlewareCoroutine:
+        async def middleware_fn(method: RPCEndpoint, params: Any) -> RPCResponse:
+            if method != 'eth_sendTransaction':
+                return await make_request(method, params)
+
+            transaction = format_transaction(params[0])
+            if 'from' not in transaction:
+                return await make_request(method, params)
+
+            elif transaction.get('from') not in {account.address for account in accounts}:
+                return await make_request(method, params)
+
+            account = next(account for account in accounts if account.address == transaction['from'])
+            signed = account.sign_transaction(transaction)
+            return await make_request(RPC.eth_sendRawTransaction, [signed.rawTransaction])
+
+        return middleware_fn
+
+    return middleware
