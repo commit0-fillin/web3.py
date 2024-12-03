@@ -24,5 +24,14 @@ def parse_basic_type_str(old_normalizer: Callable[[BasicType, TypeStr, Any], Tup
     that type string does not represent a basic type (i.e. non-tuple type) or is
     not parsable, the normalizer does nothing.
     """
-    pass
+    @functools.wraps(old_normalizer)
+    def new_normalizer(type_str: TypeStr, value: Any) -> Tuple[TypeStr, Any]:
+        try:
+            abi_type = parse(type_str)
+            if isinstance(abi_type, BasicType):
+                return old_normalizer(abi_type, type_str, value)
+        except ParseError:
+            pass
+        return type_str, value
+    return new_normalizer
 BASE_RETURN_NORMALIZERS = [addresses_checksummed]
