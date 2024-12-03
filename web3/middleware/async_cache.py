@@ -21,4 +21,24 @@ async def async_construct_simple_cache_middleware(cache: SimpleCache=None, rpc_w
         ``response`` and returns a boolean as to whether the response should be
         cached.
     """
-    pass
+    if cache is None:
+        cache = SimpleCache()
+    if rpc_whitelist is None:
+        rpc_whitelist = SIMPLE_CACHE_RPC_WHITELIST
+
+    async def middleware(make_request: Callable[[RPCEndpoint, Any], Any], w3: "AsyncWeb3") -> AsyncMiddlewareCoroutine:
+        async def middleware_fn(method: RPCEndpoint, params: Any) -> RPCResponse:
+            if method in rpc_whitelist:
+                cache_key = generate_cache_key((method, params))
+                if cache_key in cache:
+                    return cache[cache_key]
+
+            response = await make_request(method, params)
+            if should_cache_fn(method, params, response):
+                cache_key = generate_cache_key((method, params))
+                cache[cache_key] = response
+            return response
+
+        return middleware_fn
+
+    return middleware
