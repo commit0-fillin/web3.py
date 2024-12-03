@@ -34,13 +34,24 @@ def type_aware_apply_formatters_to_dict(formatters: Formatters, value: Union[Att
     """
     Preserve ``AttributeDict`` types if original ``value`` was an ``AttributeDict``.
     """
-    pass
+    formatted_dict = apply_formatters_to_dict(formatters, value)
+    
+    if isinstance(value, AttributeDict):
+        return ReadableAttributeDict(formatted_dict)
+    return formatted_dict
 
 def type_aware_apply_formatters_to_dict_keys_and_values(key_formatters: Callable[[Any], Any], value_formatters: Callable[[Any], Any], dict_like_object: Union[AttributeDict[str, Any], Dict[str, Any]]) -> Union[ReadableAttributeDict[str, Any], Dict[str, Any]]:
     """
     Preserve ``AttributeDict`` types if original ``value`` was an ``AttributeDict``.
     """
-    pass
+    formatted_dict = {
+        key_formatters(key): value_formatters(value)
+        for key, value in dict_like_object.items()
+    }
+    
+    if isinstance(dict_like_object, AttributeDict):
+        return ReadableAttributeDict(formatted_dict)
+    return formatted_dict
 ACCESS_LIST_FORMATTER = type_aware_apply_formatters_to_dict({'address': to_checksum_address, 'storageKeys': apply_list_to_array_formatter(to_hexbytes(64))})
 ACCESS_LIST_RESPONSE_FORMATTER = type_aware_apply_formatters_to_dict({'accessList': apply_list_to_array_formatter(ACCESS_LIST_FORMATTER), 'gasUsed': to_integer_if_hex})
 TRANSACTION_RESULT_FORMATTERS = {'blockHash': apply_formatter_if(is_not_null, to_hexbytes(32)), 'blockNumber': apply_formatter_if(is_not_null, to_integer_if_hex), 'transactionIndex': apply_formatter_if(is_not_null, to_integer_if_hex), 'nonce': to_integer_if_hex, 'gas': to_integer_if_hex, 'gasPrice': to_integer_if_hex, 'maxFeePerGas': to_integer_if_hex, 'maxPriorityFeePerGas': to_integer_if_hex, 'value': to_integer_if_hex, 'from': to_checksum_address, 'publicKey': apply_formatter_if(is_not_null, to_hexbytes(64)), 'r': apply_formatter_if(is_not_null, to_hexbytes(32, variable_length=True)), 'raw': HexBytes, 's': apply_formatter_if(is_not_null, to_hexbytes(32, variable_length=True)), 'to': apply_formatter_if(is_address, to_checksum_address), 'hash': to_hexbytes(32), 'v': apply_formatter_if(is_not_null, to_integer_if_hex), 'yParity': apply_formatter_if(is_not_null, to_integer_if_hex), 'standardV': apply_formatter_if(is_not_null, to_integer_if_hex), 'type': apply_formatter_if(is_not_null, to_integer_if_hex), 'chainId': apply_formatter_if(is_not_null, to_integer_if_hex), 'accessList': apply_formatter_if(is_not_null, apply_formatter_to_array(ACCESS_LIST_FORMATTER)), 'input': HexBytes, 'data': HexBytes, 'maxFeePerBlobGas': to_integer_if_hex, 'blobVersionedHashes': apply_formatter_if(is_not_null, apply_formatter_to_array(to_hexbytes(32)))}
