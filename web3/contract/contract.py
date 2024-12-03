@@ -82,14 +82,65 @@ class ContractEvent(BaseContractEvent):
           same time as fromBlock or toBlock
         :yield: Tuple of :class:`AttributeDict` instances
         """
-        pass
+        if block_hash is not None and (fromBlock is not None or toBlock is not None):
+            raise ValueError("Cannot set both block_hash and fromBlock/toBlock")
+
+        abi = self._get_event_abi()
+        codec = self.w3.codec
+
+        # Create the filter params
+        filter_params = {}
+        if argument_filters is not None:
+            filter_params['topics'] = construct_event_filter_params(abi, codec, argument_filters)
+        if fromBlock is not None:
+            filter_params['fromBlock'] = fromBlock
+        if toBlock is not None:
+            filter_params['toBlock'] = toBlock
+        if block_hash is not None:
+            filter_params['blockHash'] = block_hash
+        if self.address is not None:
+            filter_params['address'] = self.address
+
+        # Call eth_getLogs
+        logs = self.w3.eth.get_logs(filter_params)
+
+        # Parse the logs
+        for log in logs:
+            yield get_event_data(codec, abi, log)
 
     @combomethod
     def create_filter(self, *, argument_filters: Optional[Dict[str, Any]]=None, fromBlock: Optional[BlockIdentifier]=None, toBlock: BlockIdentifier='latest', address: Optional[ChecksumAddress]=None, topics: Optional[Sequence[Any]]=None) -> LogFilter:
         """
         Create filter object that tracks logs emitted by this contract event.
         """
-        pass
+        abi = self._get_event_abi()
+        codec = self.w3.codec
+
+        if argument_filters is None:
+            argument_filters = {}
+
+        _filters = dict(**argument_filters)
+
+        data_filter_set, event_filter_params = construct_event_filter_params(
+            abi,
+            codec,
+            contract_address=self.address,
+            argument_filters=_filters,
+            fromBlock=fromBlock,
+            toBlock=toBlock,
+            address=address,
+            topics=topics,
+        )
+
+        log_data_extract_fn = functools.partial(get_event_data, codec, abi)
+
+        log_filter = self.w3.eth.filter(event_filter_params)
+
+        log_filter.set_data_filters(data_filter_set)
+        log_filter.log_entry_formatter = log_data_extract_fn
+        log_filter.filter_params = event_filter_params
+
+        return log_filter
 
 class ContractEvents(BaseContractEvents):
 
@@ -140,7 +191,36 @@ class ContractFunction(BaseContractFunction):
         :return: ``Caller`` object that has contract public functions
             and variables exposed as Python methods
         """
-        pass
+        if transaction is None:
+            transaction = {}
+        if 'data' in transaction:
+            raise ValueError("Cannot set data in transaction")
+
+        if self.address:
+            transaction.setdefault('to', self.address)
+        if self.w3.eth.default_account is not empty:
+            transaction.setdefault('from', self.w3.eth.default_account)
+
+        if 'to' not in transaction and isinstance(self.w3.eth.default_account, ChecksumAddress):
+            transaction.setdefault('from', self.w3.eth.default_account)
+
+        if 'to' not in transaction:
+            raise ValueError(
+                "Please ensure that this contract instance has an address."
+            )
+
+        return call_contract_function(
+            self.w3,
+            self.address,
+            self._return_data_normalizers,
+            self.function_identifier,
+            transaction,
+            block_identifier=block_identifier,
+            contract_abi=self.abi,
+            fn_abi=self.abi,
+            state_override=state_override,
+            ccip_read_enabled=ccip_read_enabled,
+        )
 
 class ContractFunctions(BaseContractFunctions):
 
@@ -186,7 +266,19 @@ class Contract(BaseContract):
         :param kwargs: The contract constructor arguments as keyword arguments
         :return: a contract constructor object
         """
-        pass
+        if cls.bytecode is None:
+            raise ValueError(
+                "Cannot call constructor on a contract that does not have 'bytecode' associated "
+                "with it"
+            )
+
+        return ContractConstructor(
+            cls.w3,
+            cls.abi,
+            cls.bytecode,
+            *args,
+            **kwargs
+        )
 
 class ContractCaller(BaseContractCaller):
     w3: 'Web3'
@@ -216,4 +308,30 @@ class ContractConstructor(BaseContractConstructor):
         """
         Build the transaction dictionary without sending
         """
-        pass
+        if transaction is None:
+            transaction = {}
+
+        if 'data' in transaction:
+            raise ValueError("Cannot set data in transaction")
+
+        if self.address:
+            transaction.setdefault('to', self.address)
+
+        if self.w3.eth.default_account is not empty:
+            transaction.setdefault('from', self.w3.eth.default_account)
+
+        if 'to' not in transaction:
+            raise ValueError(
+                "Please ensure that this contract instance has an address."
+            )
+
+        return build_transaction_for_function(
+            self.address,
+            self.w3,
+            self.function_identifier,
+            transaction,
+            self.contract_abi,
+            self.abi,
+            *self.args,
+            **self.kwargs
+        )
